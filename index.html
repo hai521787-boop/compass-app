@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>轻量指南针</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #111;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        /* 表盘容器 */
+        .compass-container {
+            position: relative;
+            width: 280px;
+            height: 280px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #2a2a2a 0%, #111 100%);
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8), inset 0 0 15px rgba(255, 255, 255, 0.05);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: transform 0.1s linear;
+        }
+
+        /* 刻度线 */
+        .tick {
+            position: absolute;
+            width: 2px;
+            height: 10px;
+            background-color: #555;
+            left: 50%;
+            top: 0;
+            transform-origin: 50% 140px;
+        }
+        .tick.main { height: 15px; background-color: #fff; width: 3px; }
+
+        /* 方位字母 */
+        .direction-text {
+            position: absolute;
+            font-size: 18px;
+            font-weight: bold;
+            color: #888;
+        }
+        .dir-n { top: 15px; color: #ff4757; }
+        .dir-s { bottom: 15px; }
+        .dir-e { right: 15px; }
+        .dir-w { left: 15px; }
+
+        /* 指针 */
+        .needle {
+            position: absolute;
+            width: 8px;
+            height: 160px;
+            top: 50%;
+            left: 50%;
+            margin-top: -160px;
+            margin-left: -4px;
+            transform-origin: 50% 100%;
+            transition: transform 0.2s ease-out;
+            z-index: 10;
+        }
+        .needle::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 80px;
+            background: linear-gradient(to bottom, #ff4757, #ff6b81);
+            clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+        }
+        .needle::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 80px;
+            background: linear-gradient(to top, #ecf0f1, #bdc3c7);
+            clip-path: polygon(50% 100%, 100% 0%, 0% 0%);
+        }
+
+        /* 中心点 */
+        .center-dot {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background-color: #333;
+            border: 3px solid #fff;
+            border-radius: 50%;
+            z-index: 20;
+        }
+
+        /* 角度显示 */
+        .degree-display {
+            position: absolute;
+            bottom: 50px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+
+        /* 开始按钮（针对iOS权限） */
+        #start-btn {
+            position: absolute;
+            padding: 12px 24px;
+            background-color: #ff4757;
+            color: #fff;
+            border: none;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 100;
+            box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);
+        }
+        #start-btn.hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="compass-container" id="compass">
+        <!-- 刻度与方位将通过JS动态生成 -->
+        <div class="direction-text dir-n">N</div>
+        <div class="direction-text dir-s">S</div>
+        <div class="direction-text dir-e">E</div>
+        <div class="direction-text dir-w">W</div>
+        
+        <div class="needle" id="needle"></div>
+        <div class="center-dot"></div>
+        <div class="degree-display" id="degree">0°</div>
+    </div>
+
+    <!-- iOS 13+ 需要用户手势触发权限 -->
+    <button id="start-btn">开启指南针</button>
+
+    <script>
+        const compass = document.getElementById('compass');
+        const needle = document.getElementById('needle');
+        const degreeText = document.getElementById('degree');
+        const startBtn = document.getElementById('start-btn');
+
+        // 动态生成刻度
+        for (let i = 0; i < 360; i += 15) {
+            const tick = document.createElement('div');
+            tick.className = 'tick' + (i % 90 === 0 ? ' main' : '');
+            tick.style.transform = `rotate(${i}deg)`;
+            compass.appendChild(tick);
+        }
+
+        let currentHeading = 0;
+
+        // 处理方向数据
+        function handleOrientation(event) {
+            let heading = 0;
+            
+            // iOS 设备获取指南针朝向
+            if (event.webkitCompassHeading !== undefined) {
+                heading = event.webkitCompassHeading;
+            } 
+            // 安卓设备通常使用 alpha 值，但需要计算（部分设备无磁力计会有偏差）
+            else if (event.alpha !== null) {
+                heading = 360 - event.alpha; 
+            } else {
+                return; // 无数据
+            }
+
+            // 平滑过渡处理
+            currentHeading = heading;
+            
+            // 旋转表盘（表盘转，指针相对不转，或者指针转表盘不动，看喜好。这里旋转指针）
+            needle.style.transform = `rotate(${heading}deg)`;
+            
+            // 更新角度文字
+            degreeText.innerText = Math.round(heading) + '°';
+        }
+
+        // 启动指南针
+        function startCompass() {
+            startBtn.classList.add('hidden');
+            
+            if (window.DeviceOrientationEvent) {
+                // iOS 13+ 需要请求权限
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    DeviceOrientationEvent.requestPermission()
+                        .then(permissionState => {
+                            if (permissionState === 'granted') {
+                                window.addEventListener('deviceorientation', handleOrientation);
+                            } else {
+                                alert('未获得陀螺仪权限，无法使用指南针。');
+                            }
+                        })
+                        .catch(console.error);
+                } else {
+                    // 安卓或旧版iOS直接监听
+                    window.addEventListener('deviceorientation', handleOrientation);
+                }
+            } else {
+                alert('您的设备不支持指南针功能（无陀螺仪/磁力计）。');
+            }
+        }
+
+        // 绑定按钮点击事件
+        startBtn.addEventListener('click', startCompass);
+        
+        // PC端测试用（如果没有传感器，鼠标拖动模拟）
+        let isDragging = false;
+        let startX = 0;
+        document.addEventListener('mousedown', (e) => {
+            if (startBtn.classList.contains('hidden')) {
+                isDragging = true;
+                startX = e.clientX;
+            }
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const diff = e.clientX - startX;
+                currentHeading = (currentHeading + diff * 0.5) % 360;
+                if (currentHeading < 0) currentHeading += 360;
+                needle.style.transform = `rotate(${currentHeading}deg)`;
+                degreeText.innerText = Math.round(currentHeading) + '°';
+                startX = e.clientX;
+            }
+        });
+        document.addEventListener('mouseup', () => isDragging = false);
+    </script>
+</body>
+</html>
